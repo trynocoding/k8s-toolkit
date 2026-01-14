@@ -30,17 +30,26 @@ type ProgressCallback func(node string, bytesWritten int64, totalBytes int64, pe
 // DistributeOptions 分发选项
 type DistributeOptions struct {
 	Verbose    bool
+	ImageSize  int64 // 镜像大小（字节），用于计算进度百分比
 	ProgressCb ProgressCallback
 	SSHConfig  *ssh.ClientConfig
 }
 
 // DistributeToNodes 并行分发镜像到远程节点
 func DistributeToNodes(ctx context.Context, docker *DockerClient, imageName string, nodes []string, verbose bool) map[string]error {
+	// 预先获取镜像大小
+	imageSize, _ := docker.GetImageSize(ctx, imageName)
+
 	opts := DistributeOptions{
-		Verbose: verbose,
+		Verbose:   verbose,
+		ImageSize: imageSize,
 		ProgressCb: func(node string, written, total int64, pct float64) {
 			if verbose {
-				fmt.Printf("[%s] 进度: %.1f%% (%d / %d bytes)\n", node, pct, written, total)
+				if total > 0 {
+					fmt.Printf("[%s] 进度: %.1f%% (%s / %s)\n", node, pct, formatBytes(written), formatBytes(total))
+				} else {
+					fmt.Printf("[%s] 已传输: %s\n", node, formatBytes(written))
+				}
 			}
 		},
 	}
@@ -131,11 +140,12 @@ func distributeToNodeWithSSH(ctx context.Context, docker *DockerClient, imageNam
 		defer close(done)
 		defer stdin.Close()
 
-		// 使用 ProgressWriter 包装
+		// 使用 ProgressWriter 包装（传入总大小）
 		pw := &progressWriter{
-			writer: stdin,
-			node:   node,
-			cb:     opts.ProgressCb,
+			writer:     stdin,
+			node:       node,
+			totalBytes: opts.ImageSize,
+			cb:         opts.ProgressCb,
 		}
 
 		bytesWritten, copyErr = io.Copy(pw, reader)
@@ -167,12 +177,12 @@ func distributeToNodeWithSSH(ctx context.Context, docker *DockerClient, imageNam
 
 // progressWriter 带进度回调的 Writer
 type progressWriter struct {
-	writer      io.Writer
-	node        string
-	cb          ProgressCallback
-	written     int64
-	lastReport  time.Time
-	reportEvery time.Duration
+	writer     io.Writer
+	node       string
+	totalBytes int64
+	cb         ProgressCallback
+	written    int64
+	lastReport time.Time
 }
 
 func (pw *progressWriter) Write(p []byte) (int, error) {
@@ -184,11 +194,29 @@ func (pw *progressWriter) Write(p []byte) (int, error) {
 		now := time.Now()
 		if pw.cb != nil && now.Sub(pw.lastReport) > 100*time.Millisecond {
 			pw.lastReport = now
-			// 注意：这里无法获取总大小，显示已写入字节数
-			pw.cb(pw.node, pw.written, 0, 0)
+			// 计算百分比
+			var pct float64
+			if pw.totalBytes > 0 {
+				pct = float64(pw.written) / float64(pw.totalBytes) * 100
+			}
+			pw.cb(pw.node, pw.written, pw.totalBytes, pct)
 		}
 	}
 	return n, err
+}
+
+// formatBytes 格式化字节数为人类可读形式
+func formatBytes(bytes int64) string {
+	const unit = 1024
+	if bytes < unit {
+		return fmt.Sprintf("%d B", bytes)
+	}
+	div, exp := int64(unit), 0
+	for n := bytes / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
 }
 
 // getDefaultSSHConfig 获取默认 SSH 配置（使用 ssh-agent）

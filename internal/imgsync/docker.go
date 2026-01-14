@@ -86,3 +86,12 @@ func (d *DockerClient) ImageExists(ctx context.Context, imageName string) (bool,
 	}
 	return true, nil
 }
+
+// GetImageSize 获取镜像大小（字节）
+func (d *DockerClient) GetImageSize(ctx context.Context, imageName string) (int64, error) {
+	inspect, _, err := d.cli.ImageInspectWithRaw(ctx, imageName)
+	if err != nil {
+		return 0, fmt.Errorf("获取镜像信息失败: %w", err)
+	}
+	return inspect.Size, nil
+}

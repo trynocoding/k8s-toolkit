@@ -53,27 +53,27 @@ k8s-toolkit --help
 **基本用法:**
 ```bash
 # 进入default命名空间中的Pod
-sudo k8s-toolkit enter-ns my-pod
+sudo k8s-toolkit enter-ns -p my-pod
 
 # 进入指定命名空间的Pod
-sudo k8s-toolkit enter-ns coredns-xxx kube-system
+sudo k8s-toolkit enter-ns -n kube-system -p coredns-xxx
 ```
 
 **高级选项:**
 ```bash
 # 进入第二个容器的网络命名空间
-sudo k8s-toolkit enter-ns my-pod default -c 1
+sudo k8s-toolkit enter-ns -n default -p my-pod -c 1
 
 # 指定容器运行时
-sudo k8s-toolkit enter-ns my-pod -r containerd
+sudo k8s-toolkit enter-ns -p my-pod -r containerd
 
 # 详细输出模式
-sudo k8s-toolkit enter-ns my-pod -v
+sudo k8s-toolkit enter-ns -p my-pod -v
 ```
 
 **参数说明:**
-- `POD_NAME` - Pod名称（必需）
-- `NAMESPACE` - Kubernetes命名空间（可选，默认: default）
+- `-p, --pod` - Pod名称（必需）
+- `-n, --namespace` - Kubernetes命名空间（默认: default）
 - `-c, --container` - 容器索引（默认: 0）
 - `-r, --runtime` - 容器运行时（auto|containerd|docker，默认: auto）
 - `-v, --verbose` - 详细输出模式
@@ -138,11 +138,9 @@ k8s-toolkit/
 │   ├── img_sync.go        # img-sync子命令
 │   ├── version.go         # version命令
 │   ├── scripts.go         # 嵌入的bash脚本
-│   ├── enter_pod_ns.sh    # 原始bash脚本
-│   └── img_tool.sh        # 原始bash脚本
-├── scripts/               # 原始脚本备份
-│   ├── enter_pod_ns.sh
-│   └── img_tool.sh
+│   └── scripts/           # bash脚本源文件
+│       ├── enter_pod_ns.sh
+│       └── img_tool.sh
 ├── main.go                # 程序入口
 ├── go.mod                 # Go模块定义
 ├── Makefile              # 构建脚本

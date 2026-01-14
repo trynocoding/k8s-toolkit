@@ -39,13 +39,13 @@ make build
 ./k8s-toolkit enter-ns --help
 
 # 进入Pod网络命名空间（需要sudo）
-sudo ./k8s-toolkit enter-ns my-pod
+sudo ./k8s-toolkit enter-ns -p my-pod
 
 # 进入kube-system命名空间的Pod
-sudo ./k8s-toolkit enter-ns coredns-xxx kube-system
+sudo ./k8s-toolkit enter-ns -n kube-system -p coredns-xxx
 
 # 进入第二个容器
-sudo ./k8s-toolkit enter-ns my-pod default -c 1
+sudo ./k8s-toolkit enter-ns -n default -p my-pod -c 1
 ```
 
 进入namespace后，你可以使用各种网络调试工具：
@@ -95,7 +95,7 @@ scp k8s-toolkit user@remote-host:/usr/local/bin/
 
 # 在远程机器上使用
 ssh user@remote-host
-sudo k8s-toolkit enter-ns my-pod
+sudo k8s-toolkit enter-ns -p my-pod
 ```
 
 ## 常见问题
@@ -122,10 +122,10 @@ A:
 示例见README.md的"开发"章节。
 
 ### Q: 原始bash脚本还能独立使用吗？
-A: 可以！原始脚本保存在`scripts/`目录，依然可以独立运行：
+A: 可以！原始脚本保存在`cmd/scripts/`目录，依然可以独立运行：
 ```bash
-bash scripts/enter_pod_ns.sh my-pod
-bash scripts/img_tool.sh -i nginx:latest
+bash cmd/scripts/enter_pod_ns.sh my-pod
+bash cmd/scripts/img_tool.sh -i nginx:latest
 ```
 
 ## 下一步

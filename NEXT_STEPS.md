@@ -52,7 +52,7 @@ sudo mv k8s-toolkit /usr/local/bin/
 
 ```bash
 # 进入Pod网络命名空间（需要sudo）
-sudo k8s-toolkit enter-ns my-pod
+sudo k8s-toolkit enter-ns -p my-pod
 
 # 同步Docker镜像
 k8s-toolkit img-sync -i nginx:latest

@@ -31,16 +31,13 @@ k8s-toolkit/                    # 项目根目录
 │
 ├── cmd/                        # 命令实现目录
 │   ├── root.go                 # 根命令 (935字节)
-│   ├── enter_ns.go             # enter-ns子命令 (2.5KB)
+│   ├── enter_ns.go             # enter-ns子命令 (2.8KB)
 │   ├── img_sync.go             # img-sync子命令 (2.9KB)
 │   ├── version.go              # version命令 (456字节)
-│   ├── scripts.go              # 脚本嵌入声明 (217字节)
-│   ├── enter_pod_ns.sh         # 嵌入的bash脚本 (10.7KB)
-│   └── img_tool.sh             # 嵌入的bash脚本 (3.2KB)
-│
-└── scripts/                    # 原始脚本备份
-    ├── enter_pod_ns.sh         # 原始脚本1
-    └── img_tool.sh             # 原始脚本2
+│   ├── scripts.go              # 脚本嵌入声明 (233字节)
+│   └── scripts/                # bash脚本源文件
+│       ├── enter_pod_ns.sh     # 嵌入的bash脚本 (10.7KB)
+│       └── img_tool.sh         # 嵌入的bash脚本 (3.2KB)
 ```
 
 ### 技术栈
@@ -85,7 +82,7 @@ k8s-toolkit/                    # 项目根目录
 
 **现在的Go CLI:**
 ```bash
-k8s-toolkit enter-ns my-pod default -c 0 -r auto -v
+k8s-toolkit enter-ns -n default -p my-pod -c 0 -r auto -v
 ```
 
 **优势:**

@@ -11,7 +11,7 @@ import (
 )
 
 var enterNsCmd = &cobra.Command{
-	Use:   "enter-ns POD_NAME [NAMESPACE]",
+	Use:   "enter-ns",
 	Short: "进入Pod的网络命名空间",
 	Long: `进入指定Kubernetes Pod的网络命名空间。
 
@@ -20,21 +20,22 @@ var enterNsCmd = &cobra.Command{
 
 示例:
   # 进入default命名空间中的my-pod
-  k8s-toolkit enter-ns my-pod
+  k8s-toolkit enter-ns -p my-pod
 
   # 进入kube-system命名空间中的pod
-  k8s-toolkit enter-ns coredns-xxx kube-system
+  k8s-toolkit enter-ns -n kube-system -p coredns-xxx
 
   # 进入第二个容器的网络命名空间
-  k8s-toolkit enter-ns my-pod default -c 1
+  k8s-toolkit enter-ns -n default -p my-pod -c 1
 
   # 详细模式
-  k8s-toolkit enter-ns my-pod -v`,
-	Args: cobra.RangeArgs(1, 2),
+  k8s-toolkit enter-ns -p my-pod -v`,
 	RunE: runEnterNs,
 }
 
 var (
+	podName        string
+	namespace      string
 	containerIndex int
 	runtime        string
 )
@@ -42,15 +43,23 @@ var (
 func init() {
 	rootCmd.AddCommand(enterNsCmd)
 
-	enterNsCmd.Flags().IntVarP(&containerIndex, "container", "c", 0, 
+	// 必需参数
+	enterNsCmd.Flags().StringVarP(&podName, "pod", "p", "",
+		"Pod 名称 (必需)")
+	enterNsCmd.MarkFlagRequired("pod")
+
+	// 可选参数
+	enterNsCmd.Flags().StringVarP(&namespace, "namespace", "n", "default",
+		"Kubernetes 命名空间")
+	enterNsCmd.Flags().IntVarP(&containerIndex, "container", "c", 0,
 		"容器索引 (默认: 0，即第一个容器)")
-	enterNsCmd.Flags().StringVarP(&runtime, "runtime", "r", "auto", 
+	enterNsCmd.Flags().StringVarP(&runtime, "runtime", "r", "auto",
 		"容器运行时 (containerd|docker|auto)")
 }
 
 func runEnterNs(cmd *cobra.Command, args []string) error {
 	verbose, _ := cmd.Flags().GetBool("verbose")
-	
+
 	// 检查是否有root权限
 	if os.Geteuid() != 0 {
 		return fmt.Errorf("此命令需要root权限运行，请使用: sudo %s", os.Args[0])
@@ -69,8 +78,7 @@ func runEnterNs(cmd *cobra.Command, args []string) error {
 	}
 
 	// 构建bash命令参数
-	bashArgs := []string{scriptPath}
-	bashArgs = append(bashArgs, args...) // POD_NAME 和 NAMESPACE
+	bashArgs := []string{scriptPath, podName, namespace}
 
 	// 添加选项
 	if containerIndex != 0 {

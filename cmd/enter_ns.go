@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -55,6 +56,66 @@ func init() {
 		"容器索引 (默认: 0，即第一个容器)")
 	enterNsCmd.Flags().StringVarP(&runtime, "runtime", "r", "auto",
 		"容器运行时 (containerd|docker|auto)")
+
+	// 注册补全函数
+	registerCompletionFuncs()
+}
+
+// registerCompletionFuncs 注册所有参数的补全函数
+func registerCompletionFuncs() {
+	// namespace 补全
+	enterNsCmd.RegisterFlagCompletionFunc("namespace",
+		func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			namespaces, err := getNamespaces()
+			if err != nil {
+				return nil, cobra.ShellCompDirectiveError
+			}
+			return namespaces, cobra.ShellCompDirectiveNoFileComp
+		})
+
+	// pod 补全（上下文感知：根据当前 namespace）
+	enterNsCmd.RegisterFlagCompletionFunc("pod",
+		func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			// 获取当前指定的 namespace
+			ns, _ := cmd.Flags().GetString("namespace")
+			if ns == "" {
+				ns = "default"
+			}
+
+			pods, err := getPodNames(ns)
+			if err != nil {
+				return nil, cobra.ShellCompDirectiveError
+			}
+			return pods, cobra.ShellCompDirectiveNoFileComp
+		})
+
+	// runtime 静态补全
+	enterNsCmd.RegisterFlagCompletionFunc("runtime",
+		func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			return []string{"auto", "containerd", "docker"}, cobra.ShellCompDirectiveNoFileComp
+		})
+}
+
+// getNamespaces 获取所有 Kubernetes namespace
+func getNamespaces() ([]string, error) {
+	cmd := exec.Command("kubectl", "get", "namespaces",
+		"-o", "jsonpath={.items[*].metadata.name}")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+	return strings.Fields(string(output)), nil
+}
+
+// getPodNames 获取指定 namespace 下的所有 pod
+func getPodNames(namespace string) ([]string, error) {
+	cmd := exec.Command("kubectl", "get", "pods", "-n", namespace,
+		"-o", "jsonpath={.items[*].metadata.name}")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+	return strings.Fields(string(output)), nil
 }
 
 func runEnterNs(cmd *cobra.Command, args []string) error {

@@ -22,6 +22,8 @@ var rootCmd = &cobra.Command{
 它整合了多个常用的bash脚本，提供统一的命令行接口：
 - enter-ns: 进入Pod的网络命名空间
 - img-sync: Docker镜像同步和分发工具
+- fcp: 文件并行分发到多节点
+- multi-exec: 多节点并行命令执行
 
 所有功能都打包在单一二进制文件中，无需额外依赖。`,
 	Run: func(cmd *cobra.Command, args []string) {

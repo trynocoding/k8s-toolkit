@@ -30,6 +30,9 @@ var fcpCmd = &cobra.Command{
   # 使用指定私钥
   k8s-toolkit fcp -f /path/to/file.tar.gz -n node1,node2,node3 -d /opt/data/ -i ~/.ssh/my_key
 
+  # 启用文件完整性校验（推荐）
+  k8s-toolkit fcp -f /path/to/file.tar.gz -n node1,node2,node3 -d /opt/data/ --verify
+
   # 详细模式查看进度
   k8s-toolkit fcp -f /path/to/file.tar.gz -n node1,node2,node3 -d /opt/data/ -v`,
 	RunE: runFcp,
@@ -43,6 +46,7 @@ var (
 	fcpPassword   string
 	fcpIdentity   string
 	fcpPort       string
+	fcpVerify     bool
 )
 
 func init() {
@@ -71,6 +75,9 @@ func init() {
 
 	fcpCmd.Flags().StringVar(&fcpPort, "port", "22",
 		"SSH 端口 (默认: 22)")
+
+	fcpCmd.Flags().BoolVar(&fcpVerify, "verify", false,
+		"启用文件完整性校验 (使用 xxHash64 算法)")
 }
 
 func runFcp(cmd *cobra.Command, args []string) error {
@@ -107,6 +114,7 @@ func runFcp(cmd *cobra.Command, args []string) error {
 		Password:   fcpPassword,
 		Identity:   fcpIdentity,
 		Port:       fcpPort,
+		Verify:     fcpVerify,
 		Verbose:    verbose,
 	}
 
@@ -126,6 +134,11 @@ func runFcp(cmd *cobra.Command, args []string) error {
 		fmt.Printf("认证方式: 默认 (ssh-agent 或 ~/.ssh/id_*)\n")
 	}
 	fmt.Printf("端口: %s\n", fcpPort)
+	if fcpVerify {
+		fmt.Printf("文件校验: 启用 (%s)\n", filecopy.GetChecksumAlgorithm())
+	} else {
+		fmt.Printf("文件校验: 禁用\n")
+	}
 	fmt.Println("==================================")
 	fmt.Println()
 
@@ -146,21 +159,43 @@ func runFcp(cmd *cobra.Command, args []string) error {
 	// 输出结果
 	fmt.Println("\n========== 分发结果 ==========")
 	fmt.Printf("源文件: %s\n", result.SourceFile)
-	fmt.Printf("耗时: %v\n", result.Duration)
+	fmt.Printf("传输耗时: %v\n", result.Duration)
+	if fcpVerify && result.VerifyDuration > 0 {
+		fmt.Printf("校验耗时: %v\n", result.VerifyDuration)
+		fmt.Printf("总耗时: %v\n", result.Duration+result.VerifyDuration)
+	}
+	if result.LocalChecksum != "" {
+		fmt.Printf("本地校验和: %s\n", result.LocalChecksum)
+	}
 	fmt.Println("\n节点状态:")
 
 	hasError := false
+	hasVerifyFailure := false
 	for _, node := range nodeList {
-		nodeErr := result.NodesStatus[node]
-		if nodeErr != nil {
-			fmt.Printf("  ❌ %s: %v\n", node, nodeErr)
+		nodeResult := result.NodesStatus[node]
+		if nodeResult.Error != nil {
+			fmt.Printf("  ❌ %s: %v\n", node, nodeResult.Error)
 			hasError = true
 		} else {
-			fmt.Printf("  ✅ %s: 成功\n", node)
+			// 检查校验结果
+			if fcpVerify && nodeResult.Checksum != nil {
+				if nodeResult.Checksum.Verified {
+					fmt.Printf("  ✅ %s: 成功 (校验通过: %s)\n", node, nodeResult.Checksum.RemoteChecksum)
+				} else {
+					fmt.Printf("  ⚠️  %s: 传输成功但校验失败 (期望: %s, 实际: %s)\n",
+						node, result.LocalChecksum, nodeResult.Checksum.RemoteChecksum)
+					hasVerifyFailure = true
+				}
+			} else {
+				fmt.Printf("  ✅ %s: 成功\n", node)
+			}
 		}
 	}
 
-	if hasError {
+	if hasError || hasVerifyFailure {
+		if hasVerifyFailure {
+			fmt.Println("\n⚠️  警告: 部分文件校验失败，请检查文件完整性！")
+		}
 		os.Exit(1)
 	}
 

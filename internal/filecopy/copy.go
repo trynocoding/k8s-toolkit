@@ -23,14 +23,23 @@ type CopyOptions struct {
 	Password   string   // SSH 密码（可选）
 	Identity   string   // SSH 私钥路径（可选）
 	Port       string   // SSH 端口（默认 22）
+	Verify     bool     // 是否校验文件完整性
 	Verbose    bool     // 详细输出
+}
+
+// NodeResult 单个节点的复制结果
+type NodeResult struct {
+	Error    error           // 复制错误（nil 表示成功）
+	Checksum *ChecksumResult // 校验结果（如果启用校验）
 }
 
 // CopyResult 复制结果
 type CopyResult struct {
-	SourceFile  string
-	NodesStatus map[string]error // 节点名称 -> 错误信息（nil 表示成功）
-	Duration    time.Duration
+	SourceFile     string
+	LocalChecksum  string                 // 本地文件校验和
+	NodesStatus    map[string]*NodeResult // 节点名称 -> 节点结果
+	Duration       time.Duration
+	VerifyDuration time.Duration // 校验耗时
 }
 
 // ProgressCallback 进度回调
@@ -52,6 +61,21 @@ func CopyToNodes(ctx context.Context, opts CopyOptions, progressCb ProgressCallb
 	// 获取文件大小
 	fileSize := fileInfo.Size()
 
+	// 如果启用校验，先计算本地文件校验和
+	var localChecksum string
+	if opts.Verify {
+		if opts.Verbose {
+			fmt.Printf("计算本地文件校验和 (%s)...\n", GetChecksumAlgorithm())
+		}
+		localChecksum, err = CalculateFileChecksum(opts.SourceFile)
+		if err != nil {
+			return nil, fmt.Errorf("计算本地校验和失败: %w", err)
+		}
+		if opts.Verbose {
+			fmt.Printf("本地校验和: %s\n\n", localChecksum)
+		}
+	}
+
 	// 构建 SSH 配置
 	sshConfig, err := buildSSHConfig(opts)
 	if err != nil {
@@ -60,7 +84,7 @@ func CopyToNodes(ctx context.Context, opts CopyOptions, progressCb ProgressCallb
 
 	// 并行复制到各节点
 	var wg sync.WaitGroup
-	results := make(map[string]error)
+	results := make(map[string]*NodeResult)
 	var mu sync.Mutex
 
 	for _, node := range opts.Nodes {
@@ -72,30 +96,99 @@ func CopyToNodes(ctx context.Context, opts CopyOptions, progressCb ProgressCallb
 				fmt.Printf("[%s] 开始复制文件 %s\n", n, opts.SourceFile)
 			}
 
-			err := copyToNode(ctx, opts, n, sshConfig, fileSize, progressCb)
+			nodeResult := &NodeResult{}
+			nodeResult.Error = copyToNode(ctx, opts, n, sshConfig, fileSize, progressCb)
 
-			mu.Lock()
-			results[n] = err
-			mu.Unlock()
-
-			if err != nil {
+			if nodeResult.Error != nil {
 				if opts.Verbose {
-					fmt.Printf("[%s] 复制失败: %v\n", n, err)
+					fmt.Printf("[%s] 复制失败: %v\n", n, nodeResult.Error)
 				}
 			} else {
 				if opts.Verbose {
 					fmt.Printf("[%s] 复制成功 ✓\n", n)
 				}
 			}
+
+			mu.Lock()
+			results[n] = nodeResult
+			mu.Unlock()
 		}(node)
 	}
 
 	wg.Wait()
 
+	copyDuration := time.Since(startTime)
+
+	// 如果启用校验，验证远程文件
+	var verifyDuration time.Duration
+	if opts.Verify && localChecksum != "" {
+		verifyStart := time.Now()
+		if opts.Verbose {
+			fmt.Println("\n========== 开始文件校验 ==========")
+		}
+
+		var verifyWg sync.WaitGroup
+		for _, node := range opts.Nodes {
+			// 只验证复制成功的节点
+			if results[node].Error != nil {
+				continue
+			}
+
+			verifyWg.Add(1)
+			go func(n string) {
+				defer verifyWg.Done()
+
+				if opts.Verbose {
+					fmt.Printf("[%s] 验证远程文件...\n", n)
+				}
+
+				// 重新建立连接进行校验
+				host, port := parseHostPort(n, opts.Port)
+				addr := net.JoinHostPort(host, port)
+				client, err := ssh.Dial("tcp", addr, sshConfig)
+				if err != nil {
+					mu.Lock()
+					results[n].Checksum = &ChecksumResult{
+						LocalChecksum: localChecksum,
+						Error:         fmt.Errorf("SSH 连接失败: %w", err),
+					}
+					mu.Unlock()
+					return
+				}
+				defer client.Close()
+
+				fileName := filepath.Base(opts.SourceFile)
+				destPath := filepath.Join(opts.DestDir, fileName)
+
+				checksumResult, err := VerifyRemoteChecksum(client, destPath, localChecksum)
+				if err != nil && opts.Verbose {
+					fmt.Printf("[%s] 校验失败: %v\n", n, err)
+				}
+
+				mu.Lock()
+				results[n].Checksum = checksumResult
+				mu.Unlock()
+
+				if opts.Verbose {
+					if checksumResult.Verified {
+						fmt.Printf("[%s] 校验通过 ✓ (远程: %s)\n", n, checksumResult.RemoteChecksum)
+					} else {
+						fmt.Printf("[%s] 校验失败 ✗ (期望: %s, 实际: %s)\n", n, localChecksum, checksumResult.RemoteChecksum)
+					}
+				}
+			}(node)
+		}
+
+		verifyWg.Wait()
+		verifyDuration = time.Since(verifyStart)
+	}
+
 	return &CopyResult{
-		SourceFile:  opts.SourceFile,
-		NodesStatus: results,
-		Duration:    time.Since(startTime),
+		SourceFile:     opts.SourceFile,
+		LocalChecksum:  localChecksum,
+		NodesStatus:    results,
+		Duration:       copyDuration,
+		VerifyDuration: verifyDuration,
 	}, nil
 }
 

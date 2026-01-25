@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/client"
@@ -94,4 +95,60 @@ func (d *DockerClient) GetImageSize(ctx context.Context, imageName string) (int6
 		return 0, fmt.Errorf("获取镜像信息失败: %w", err)
 	}
 	return inspect.Size, nil
+}
+
+// PullPlatform 拉取指定平台的镜像
+func (d *DockerClient) PullPlatform(ctx context.Context, imageName, arch string) error {
+	platform := fmt.Sprintf("linux/%s", arch)
+
+	out, err := d.cli.ImagePull(ctx, imageName, image.PullOptions{
+		Platform: platform,
+	})
+	if err != nil {
+		return fmt.Errorf("拉取 %s 平台镜像失败: %w", platform, err)
+	}
+	defer out.Close()
+
+	// 消费输出流（避免阻塞）
+	_, err = io.Copy(io.Discard, out)
+	return err
+}
+
+// Tag 为镜像创建新标签
+func (d *DockerClient) Tag(ctx context.Context, source, target string) error {
+	if err := d.cli.ImageTag(ctx, source, target); err != nil {
+		return fmt.Errorf("创建镜像标签失败: %w", err)
+	}
+	return nil
+}
+
+// SaveToFile 保存镜像到文件
+func (d *DockerClient) SaveToFile(ctx context.Context, imageName, filepath string) error {
+	reader, err := d.SaveToStream(ctx, imageName)
+	if err != nil {
+		return err
+	}
+	defer reader.Close()
+
+	file, err := os.Create(filepath)
+	if err != nil {
+		return fmt.Errorf("创建文件失败: %w", err)
+	}
+	defer file.Close()
+
+	if _, err := io.Copy(file, reader); err != nil {
+		return fmt.Errorf("保存镜像到文件失败: %w", err)
+	}
+
+	return nil
+}
+
+// ImageRemove 删除镜像
+func (d *DockerClient) ImageRemove(ctx context.Context, imageName string) error {
+	if _, err := d.cli.ImageRemove(ctx, imageName, image.RemoveOptions{
+		Force: true,
+	}); err != nil {
+		return fmt.Errorf("删除镜像失败: %w", err)
+	}
+	return nil
 }

@@ -46,7 +46,73 @@ k8s-toolkit --help
 
 ### 命令列表
 
-#### 1. `enter-ns` - 进入Pod网络命名空间
+#### 1. `proc-status` - 查看进程 Capabilities 和 Signals 信息
+
+查看进程的 Linux Capabilities 和 Signals 信息，自动解码十六进制 bitmask 为可读格式。
+
+**基本用法:**
+```bash
+# 查看本地进程
+k8s-toolkit proc-status --pid 1234
+
+# 只查看 Capabilities
+k8s-toolkit proc-status --pid 1 --capabilities
+
+# 只查看 Signals  
+k8s-toolkit proc-status --pid 1 --signals
+```
+
+**查看 Pod 容器内进程:**
+```bash
+# 查看 Pod 内进程的 Capabilities
+k8s-toolkit proc-status -p my-pod -n default --pid 1 --capabilities
+
+# 查看第二个容器的进程
+k8s-toolkit proc-status -p my-pod -n kube-system -c 1 --pid 1
+
+# 详细模式
+k8s-toolkit proc-status -p my-pod --pid 1 -v
+```
+
+**参数说明:**
+- `--pid` - 进程 PID（必需）
+- `-p, --pod` - Pod 名称（可选，用于查看 Pod 内进程）
+- `-n, --namespace` - Kubernetes 命名空间（默认: default）
+- `-c, --container` - 容器索引（默认: 0）
+- `--capabilities` - 只显示 Capabilities 信息
+- `--signals` - 只显示 Signals 信息
+- `-v, --verbose` - 详细输出模式
+
+**输出示例:**
+```
+Process: 1 (systemd)
+State:   S (sleeping)
+
+========== Capabilities ==========
+CapInh: 0x0000000000000000 -> <none>
+CapPrm: 0x000001ffffffffff -> CAP_CHOWN, CAP_DAC_OVERRIDE, CAP_NET_BIND_SERVICE, CAP_SYS_ADMIN, ...
+CapEff: 0x000001ffffffffff -> CAP_CHOWN, CAP_DAC_OVERRIDE, ...
+CapBnd: 0x000001ffffffffff -> CAP_CHOWN, CAP_DAC_OVERRIDE, ...
+CapAmb: 0x0000000000000000 -> <none>
+
+========== Signals ==========
+SigQ:   0/58791
+SigPnd: 0x0000000000000000 -> <none>
+ShdPnd: 0x0000000000000000 -> <none>
+SigBlk: 0x0000000000000000 -> <none>
+SigIgn: 0x0000000000001000 -> SIGPIPE
+SigCgt: 0x00000001a0016623 -> SIGHUP, SIGINT, SIGTERM, SIGCHLD
+```
+
+**依赖要求:**
+- 本地查看：Linux 系统（需要 /proc 文件系统）
+- Pod 查看：kubectl 命令行工具
+
+**详细文档:** 参见 [docs/PROC_STATUS.md](docs/PROC_STATUS.md)
+
+---
+
+#### 2. `enter-ns` - 进入Pod网络命名空间
 
 进入指定Kubernetes Pod的网络命名空间，用于网络调试。
 
@@ -85,7 +151,7 @@ sudo k8s-toolkit enter-ns -p my-pod -v
 - nsenter
 - root权限
 
-#### 2. `img-sync` - Docker镜像同步和分发
+#### 3. `img-sync` - Docker镜像同步和分发
 
 自动化Docker镜像的拉取、导出、导入到containerd，并可选地分发到远程节点。
 
@@ -122,7 +188,7 @@ k8s-toolkit img-sync -i nginx:latest -v
 - ctr (containerd)
 - ssh/scp（如果需要远程分发）
 
-#### 3. `version` - 显示版本信息
+#### 4. `version` - 显示版本信息
 
 ```bash
 k8s-toolkit version

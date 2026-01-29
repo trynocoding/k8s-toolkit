@@ -69,6 +69,38 @@ func init() {
 		"只显示 Capabilities 信息")
 	procStatusCmd.Flags().BoolVar(&procShowSignals, "signals", false,
 		"只显示 Signals 信息")
+
+	// 注册补全函数
+	registerProcStatusCompletions()
+}
+
+// registerProcStatusCompletions 注册所有参数的补全函数
+func registerProcStatusCompletions() {
+	// namespace 补全
+	procStatusCmd.RegisterFlagCompletionFunc("namespace",
+		func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			namespaces, err := getNamespaces()
+			if err != nil {
+				return nil, cobra.ShellCompDirectiveError
+			}
+			return namespaces, cobra.ShellCompDirectiveNoFileComp
+		})
+
+	// pod 补全（上下文感知：根据当前 namespace）
+	procStatusCmd.RegisterFlagCompletionFunc("pod",
+		func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			// 获取当前指定的 namespace
+			ns, _ := cmd.Flags().GetString("namespace")
+			if ns == "" {
+				ns = "default"
+			}
+
+			pods, err := getPodNames(ns)
+			if err != nil {
+				return nil, cobra.ShellCompDirectiveError
+			}
+			return pods, cobra.ShellCompDirectiveNoFileComp
+		})
 }
 
 func runProcStatus(cmd *cobra.Command, args []string) error {
